@@ -18,17 +18,17 @@ IMG_MEAN = np.array((104.00698793,116.66876762,122.67891434), dtype=np.float32)
 
 BATCH_SIZE = 1
 DATA_DIRECTORY = '/home/ubuntu/Documents/codes/flower_classification/oxfordflower102/jpg_resized/'
-DATA_LIST_PATH = './dataset/train.txt'
+DATA_LIST_PATH = './dataset/val.txt'
 INPUT_SIZE = '225,225'
-LEARNING_RATE = 1.0e3
+LEARNING_RATE = 1.0e-3
 MOMENTUM = 0.9
 NUM_CLASSES = 102
-NUM_STEPS = 70001
+NUM_STEPS = 1189
 POWER = 0.9
 RANDOM_SEED = 1234
-RESTORE_FROM = None
+RESTORE_FROM = '/home/ubuntu/Documents/codes/flower_classification/tensorflow_vgg16_image_classification/snapshots/model.ckpt-0'
 SAVE_NUM_IMAGES = 1
-SAVE_PRED_EVERY = 7000
+SAVE_PRED_EVERY = 8000
 SNAPSHOT_DIR = './snapshots/'
 WEIGHT_DECAY = 0.0005
 
@@ -139,17 +139,11 @@ def main():
     # Predictions.
     raw_output = net.layers['fc8']
     
-    restore_var = [v for v in tf.global_variables() if 'fc8' not in v.name]
+    restore_var = [v for v in tf.global_variables()]
     
     soft_output = tf.nn.softmax(raw_output)
     pred_int = tf.argmax(soft_output, dimension = 1)
                                                   
-    # Pixel-wise softmax loss.
-    reduced_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=label_int, logits=raw_output)
-  
-    # Define loss and optimisation parameters.
-    train_op = tf.train.AdamOptimizer(args.learning_rate).minimize(reduced_loss)    
-    
     # Set up tf session and initialize variables. 
     config = tf.ConfigProto()
     config.gpu_options.allow_growth = True
@@ -172,14 +166,9 @@ def main():
     # Iterate over training steps.
     for step in range(args.num_steps):
         start_time = time.time()
-        if step % args.save_pred_every == 0:
-            pred_i, label_i, red_loss, _ = sess.run([pred_int, label_int, reduced_loss,train_op])
-            if step > 0:
-                save(saver, sess, args.snapshot_dir, step)
-        else:
-            pred_i, label_i, red_loss, _ = sess.run([pred_int, label_int, reduced_loss, train_op])
+        pred_i, label_i = sess.run([pred_int, label_int])
         duration = time.time() - start_time
-        print('step:', step, ' predicted_label:', pred_i, ' original_label:', label_i, ' reduced_loss:', red_loss, ' duration:', duration)
+        print('step:', step, ' predicted_label:', pred_i, ' original_label:', label_i, ' duration:', duration)
     coord.request_stop()
     coord.join(threads)
     
