@@ -18,7 +18,7 @@ from vgg19 import VGG19Model, ImageReader, decode_labels, inv_preprocess, prepar
 IMG_MEAN = np.array((104.00698793,116.66876762,122.67891434), dtype=np.float32)
 
 BATCH_SIZE = 10
-DATA_DIRECTORY = 'Documents/codes/flower_classification/oxfordflower102/jpg'
+DATA_DIRECTORY = 'Documents/codes/flower_classification/oxfordflower102/jpg/'
 DATA_LIST_PATH = './dataset/train.txt'
 IGNORE_LABEL = 255
 INPUT_SIZE = '481,481'
