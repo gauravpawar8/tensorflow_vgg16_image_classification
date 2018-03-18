@@ -46,8 +46,6 @@ def random_crop_and_pad_image(image, crop_h, crop_w):
     image_shape = tf.shape(image)
     combined_pad = tf.image.pad_to_bounding_box(image, 0, 0, tf.maximum(crop_h, image_shape[0]), tf.maximum(crop_w, image_shape[1]))
     
-    last_image_dim = tf.shape(image)[-1]
-    last_label_dim = tf.shape(label)[-1]
     img_crop = tf.random_crop(combined_pad, [crop_h,crop_w,3])
     img_crop.set_shape((crop_h, crop_w, 3))
     return img_crop  
@@ -155,6 +153,6 @@ class ImageReader(object):
           
         Returns:
           Two tensors of size (batch_size, h, w, {3, 1}) for images and masks.'''
-        image_batch, label_batch = tf.train.batch([self.image, self.label],
-                                                  num_elements)
+        image_batch = tf.expand_dims( self.image, axis=0)
+        label_batch = self.label
         return image_batch, label_batch

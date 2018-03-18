@@ -42,5 +42,5 @@ class VGG19Model(Network):
              .dropout(0.5, name='dp1')
              .fc(4096, name='fc2', relu=True)
              .dropout(0.5, name='dp2')
-             .fc(1000, name='fc3', relu=False)
-             .softmax(name='vgg_output'))
+             .fc(102, name='fc3', relu=False))
+             # .softmax(name='vgg_output'))
