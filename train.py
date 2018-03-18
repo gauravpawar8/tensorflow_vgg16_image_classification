@@ -1,8 +1,5 @@
-"""Training script for the DeepLab-ResNet network on the PASCAL VOC dataset
-   for semantic image segmentation.
-
-This script trains the model using augmented PASCAL VOC,
-which contains approximately 10000 images for training and 1500 images for validation.
+"""Training script for the VGG19 network on the OxFord Flowers 102 dataset
+   for image classification.
 """
 
 from __future__ import print_function
@@ -16,24 +13,24 @@ import time
 import tensorflow as tf
 import numpy as np
 
-from deeplab_resnet import DeepLabResNetModel, ImageReader, decode_labels, inv_preprocess, prepare_label
+from vgg19 import VGG19Model, ImageReader, decode_labels, inv_preprocess, prepare_label
 
 IMG_MEAN = np.array((104.00698793,116.66876762,122.67891434), dtype=np.float32)
 
 BATCH_SIZE = 10
-DATA_DIRECTORY = '/home/VOCdevkit'
+DATA_DIRECTORY = 'Documents/codes/flower_classification/oxfordflower102/jpg'
 DATA_LIST_PATH = './dataset/train.txt'
 IGNORE_LABEL = 255
-INPUT_SIZE = '321,321'
+INPUT_SIZE = '481,481'
 LEARNING_RATE = 2.5e-4
 MOMENTUM = 0.9
-NUM_CLASSES = 21
-NUM_STEPS = 20001
+NUM_CLASSES = 102
+NUM_STEPS = 80001
 POWER = 0.9
 RANDOM_SEED = 1234
-RESTORE_FROM = './deeplab_resnet.ckpt'
-SAVE_NUM_IMAGES = 2
-SAVE_PRED_EVERY = 1000
+RESTORE_FROM = None
+SAVE_NUM_IMAGES = 1
+SAVE_PRED_EVERY = 8000
 SNAPSHOT_DIR = './snapshots/'
 WEIGHT_DECAY = 0.0005
 
@@ -141,27 +138,14 @@ def main():
         image_batch, label_batch = reader.dequeue(args.batch_size)
     
     # Create network.
-    net = DeepLabResNetModel({'data': image_batch}, is_training=args.is_training, num_classes=args.num_classes)
-    # For a small batch size, it is better to keep 
-    # the statistics of the BN layers (running means and variances)
-    # frozen, and to not update the values provided by the pre-trained model. 
-    # If is_training=True, the statistics will be updated during the training.
-    # Note that is_training=False still updates BN parameters gamma (scale) and beta (offset)
-    # if they are presented in var_list of the optimiser definition.
-
+    net = VGG19Model({'data': image_batch}, is_training=args.is_training, num_classes=args.num_classes)
+    
     # Predictions.
-    raw_output = net.layers['fc1_voc12']
+    raw_output = net.layers['vgg_output']
     # Which variables to load. Running means and variances are not trainable,
     # thus all_variables() should be restored.
     restore_var = [v for v in tf.global_variables() if 'fc' not in v.name or not args.not_restore_last]
     all_trainable = [v for v in tf.trainable_variables() if 'beta' not in v.name and 'gamma' not in v.name]
-    fc_trainable = [v for v in all_trainable if 'fc' in v.name]
-    conv_trainable = [v for v in all_trainable if 'fc' not in v.name] # lr * 1.0
-    fc_w_trainable = [v for v in fc_trainable if 'weights' in v.name] # lr * 10.0
-    fc_b_trainable = [v for v in fc_trainable if 'biases' in v.name] # lr * 20.0
-    assert(len(all_trainable) == len(fc_trainable) + len(conv_trainable))
-    assert(len(fc_trainable) == len(fc_w_trainable) + len(fc_b_trainable))
-    
     
     # Predictions: ignoring all predictions with labels greater or equal than n_classes
     raw_prediction = tf.reshape(raw_output, [-1, args.num_classes])
@@ -198,21 +182,11 @@ def main():
     step_ph = tf.placeholder(dtype=tf.float32, shape=())
     learning_rate = tf.scalar_mul(base_lr, tf.pow((1 - step_ph / args.num_steps), args.power))
     
-    opt_conv = tf.train.MomentumOptimizer(learning_rate, args.momentum)
-    opt_fc_w = tf.train.MomentumOptimizer(learning_rate * 10.0, args.momentum)
-    opt_fc_b = tf.train.MomentumOptimizer(learning_rate * 20.0, args.momentum)
+    opt_conv = tf.train.MomentumOptimizer(learning_rate, args.momentum)    
 
-    grads = tf.gradients(reduced_loss, conv_trainable + fc_w_trainable + fc_b_trainable)
-    grads_conv = grads[:len(conv_trainable)]
-    grads_fc_w = grads[len(conv_trainable) : (len(conv_trainable) + len(fc_w_trainable))]
-    grads_fc_b = grads[(len(conv_trainable) + len(fc_w_trainable)):]
+    grads = tf.gradients(reduced_loss, conv_trainable)    
 
-    train_op_conv = opt_conv.apply_gradients(zip(grads_conv, conv_trainable))
-    train_op_fc_w = opt_fc_w.apply_gradients(zip(grads_fc_w, fc_w_trainable))
-    train_op_fc_b = opt_fc_b.apply_gradients(zip(grads_fc_b, fc_b_trainable))
-
-    train_op = tf.group(train_op_conv, train_op_fc_w, train_op_fc_b)
-    
+    train_op = opt_conv.apply_gradients(zip(grads, conv_trainable))
     
     # Set up tf session and initialize variables. 
     config = tf.ConfigProto()
@@ -223,7 +197,7 @@ def main():
     sess.run(init)
     
     # Saver for storing checkpoints of the model.
-    saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=10)
+    saver = tf.train.Saver(var_list=tf.global_variables(), max_to_keep=11)
     
     # Load variables if the checkpoint is provided.
     if args.restore_from is not None:
