@@ -17,11 +17,11 @@ from vgg19 import VGG19Model, ImageReader, decode_labels, inv_preprocess, prepar
 
 IMG_MEAN = np.array((104.00698793,116.66876762,122.67891434), dtype=np.float32)
 
-BATCH_SIZE = 10
-DATA_DIRECTORY = 'Documents/codes/flower_classification/oxfordflower102/jpg/'
+BATCH_SIZE = 1
+DATA_DIRECTORY = '/home/ubuntu/Documents/codes/flower_classification/oxfordflower102/jpg/'
 DATA_LIST_PATH = './dataset/train.txt'
 IGNORE_LABEL = 255
-INPUT_SIZE = '481,481'
+INPUT_SIZE = '321,321'
 LEARNING_RATE = 1.0e-3
 MOMENTUM = 0.9
 NUM_CLASSES = 102
@@ -48,8 +48,6 @@ def get_arguments():
                         help="Path to the directory containing the PASCAL VOC dataset.")
     parser.add_argument("--data-list", type=str, default=DATA_LIST_PATH,
                         help="Path to the file listing the images in the dataset.")
-    parser.add_argument("--ignore-label", type=int, default=IGNORE_LABEL,
-                        help="The index of the label to ignore during the training.")
     parser.add_argument("--input-size", type=str, default=INPUT_SIZE,
                         help="Comma-separated string with height and width of images.")
     parser.add_argument("--is-training", action="store_true",
@@ -132,61 +130,28 @@ def main():
             input_size,
             args.random_scale,
             args.random_mirror,
-            args.ignore_label,
             IMG_MEAN,
             coord)
         image_batch, label_batch = reader.dequeue(args.batch_size)
-    
+    label_int = tf.string_to_number( label_batch, out_type=tf.int32) - 1
+    label_int = tf.reshape(label_int, [1])
     # Create network.
     net = VGG19Model({'data': image_batch}, is_training=args.is_training, num_classes=args.num_classes)
     
     # Predictions.
-    raw_output = net.layers['vgg_output']
-    # Which variables to load. Running means and variances are not trainable,
-    # thus all_variables() should be restored.
-    restore_var = [v for v in tf.global_variables() if 'fc' not in v.name or not args.not_restore_last]
-    all_trainable = [v for v in tf.trainable_variables() if 'beta' not in v.name and 'gamma' not in v.name]
-    
-    # Predictions: ignoring all predictions with labels greater or equal than n_classes
-    raw_prediction = tf.reshape(raw_output, [-1, args.num_classes])
-    label_proc = prepare_label(label_batch, tf.stack(raw_output.get_shape()[1:3]), num_classes=args.num_classes, one_hot=False) # [batch_size, h, w]
-    raw_gt = tf.reshape(label_proc, [-1,])
-    indices = tf.squeeze(tf.where(tf.less_equal(raw_gt, args.num_classes - 1)), 1)
-    gt = tf.cast(tf.gather(raw_gt, indices), tf.int32)
-    prediction = tf.gather(raw_prediction, indices)
-                                                  
+    raw_output = net.layers['fc3']
+    soft_output = tf.nn.softmax(raw_output)
+    pred_int = tf.argmax(soft_output, dimension = 1)
                                                   
     # Pixel-wise softmax loss.
-    loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=prediction, labels=gt)
-    l2_losses = [args.weight_decay * tf.nn.l2_loss(v) for v in tf.trainable_variables() if 'weights' in v.name]
-    reduced_loss = tf.reduce_mean(loss) + tf.add_n(l2_losses)
-    
-    # Processed predictions: for visualisation.
-    raw_output_up = tf.image.resize_bilinear(raw_output, tf.shape(image_batch)[1:3,])
-    raw_output_up = tf.argmax(raw_output_up, dimension=3)
-    pred = tf.expand_dims(raw_output_up, dim=3)
-    
-    # Image summary.
-    images_summary = tf.py_func(inv_preprocess, [image_batch, args.save_num_images, IMG_MEAN], tf.uint8)
-    labels_summary = tf.py_func(decode_labels, [label_batch, args.save_num_images, args.num_classes], tf.uint8)
-    preds_summary = tf.py_func(decode_labels, [pred, args.save_num_images, args.num_classes], tf.uint8)
-    
-    total_summary = tf.summary.image('images', 
-                                     tf.concat(axis=2, values=[images_summary, labels_summary, preds_summary]), 
-                                     max_outputs=args.save_num_images) # Concatenate row-wise.
-    summary_writer = tf.summary.FileWriter(args.snapshot_dir,
-                                           graph=tf.get_default_graph())
-   
+    reduced_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=label_int, logits=raw_output)
+  
     # Define loss and optimisation parameters.
     base_lr = tf.constant(args.learning_rate)
     step_ph = tf.placeholder(dtype=tf.float32, shape=())
     learning_rate = tf.scalar_mul(base_lr, tf.pow((1 - step_ph / args.num_steps), args.power))
     
-    opt_conv = tf.train.MomentumOptimizer(learning_rate, args.momentum)    
-
-    grads = tf.gradients(reduced_loss, conv_trainable)    
-
-    train_op = opt_conv.apply_gradients(zip(grads, conv_trainable))
+    train_op = tf.train.AdamOptimizer(learning_rate).minimize(reduced_loss)    
     
     # Set up tf session and initialize variables. 
     config = tf.ConfigProto()
@@ -211,15 +176,14 @@ def main():
     for step in range(args.num_steps):
         start_time = time.time()
         feed_dict = { step_ph : step }
-        
+        pred_i, label_i, red_loss, _ = sess.run([pred_int, label_int, reduced_loss,train_op], feed_dict=feed_dict)
         if step % args.save_pred_every == 0:
-            loss_value, images, labels, preds, summary, _ = sess.run([reduced_loss, image_batch, label_batch, pred, total_summary, train_op], feed_dict=feed_dict)
-            summary_writer.add_summary(summary, step)
+            pred_i, label_i, red_loss, _ = sess.run([pred_int, label_int, reduced_loss,train_op], feed_dict=feed_dict)
             save(saver, sess, args.snapshot_dir, step)
         else:
-            loss_value, _ = sess.run([reduced_loss, train_op], feed_dict=feed_dict)
+            pred_i, label_i, red_loss, _ = sess.run([pred_int, label_int, reduced_loss,train_op], feed_dict=feed_dict)
         duration = time.time() - start_time
-        print('step {:d} \t loss = {:.3f}, ({:.3f} sec/step)'.format(step, loss_value, duration))
+        print('step {:d} \t loss = {:.3f}, predicted_label: {:d}, original_label: {:d}, ({:.3f} sec/step)'.format(step, pred_i, label_i, red_loss, duration))
     coord.request_stop()
     coord.join(threads)
     
