@@ -1,2 +1,2 @@
-# tensorflow_vgg19_image_classification
+# tensorflow_vgg16_image_classification
 

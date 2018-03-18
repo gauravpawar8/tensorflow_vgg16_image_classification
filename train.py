@@ -13,8 +13,7 @@ import time
 import tensorflow as tf
 import numpy as np
 
-from vgg19 import VGG19Model, ImageReader, decode_labels, inv_preprocess, prepare_label
-
+from vgg16 import VGG16Model, ImageReader, decode_labels, inv_preprocess, prepare_label
 IMG_MEAN = np.array((104.00698793,116.66876762,122.67891434), dtype=np.float32)
 
 BATCH_SIZE = 1
@@ -29,6 +28,7 @@ NUM_STEPS = 80001
 POWER = 0.9
 RANDOM_SEED = 1234
 RESTORE_FROM = None
+# RESTORE_FROM = '/home/ubuntu/Documents/codes/flower_classification/vgg_16.ckpt'
 SAVE_NUM_IMAGES = 1
 SAVE_PRED_EVERY = 8000
 SNAPSHOT_DIR = './snapshots/'
@@ -136,10 +136,13 @@ def main():
     label_int = tf.string_to_number( label_batch, out_type=tf.int32) - 1
     label_int = tf.reshape(label_int, [1])
     # Create network.
-    net = VGG19Model({'data': image_batch}, is_training=args.is_training, num_classes=args.num_classes)
+    net = VGG16Model({'data': image_batch}, is_training=args.is_training, num_classes=args.num_classes)
     
     # Predictions.
-    raw_output = net.layers['fc3']
+    raw_output = net.layers['fc8']
+    
+    restore_var = [v for v in tf.global_variables() if 'fc8' not in v.name]
+    
     soft_output = tf.nn.softmax(raw_output)
     pred_int = tf.argmax(soft_output, dimension = 1)
                                                   
@@ -147,11 +150,7 @@ def main():
     reduced_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=label_int, logits=raw_output)
   
     # Define loss and optimisation parameters.
-    base_lr = tf.constant(args.learning_rate)
-    step_ph = tf.placeholder(dtype=tf.float32, shape=())
-    learning_rate = tf.scalar_mul(base_lr, tf.pow((1 - step_ph / args.num_steps), args.power))
-    
-    train_op = tf.train.AdamOptimizer(learning_rate).minimize(reduced_loss)    
+    train_op = tf.train.AdamOptimizer(args.learning_rate).minimize(reduced_loss)    
     
     # Set up tf session and initialize variables. 
     config = tf.ConfigProto()
@@ -178,12 +177,14 @@ def main():
         feed_dict = { step_ph : step }
         pred_i, label_i, red_loss, _ = sess.run([pred_int, label_int, reduced_loss,train_op], feed_dict=feed_dict)
         if step % args.save_pred_every == 0:
-            pred_i, label_i, red_loss, _ = sess.run([pred_int, label_int, reduced_loss,train_op], feed_dict=feed_dict)
-            save(saver, sess, args.snapshot_dir, step)
+            if step > 0:
+                pred_i, label_i, red_loss, _ = sess.run([pred_int, label_int, reduced_loss,train_op], feed_dict=feed_dict)
+                save(saver, sess, args.snapshot_dir, step)
         else:
-            pred_i, label_i, red_loss, _ = sess.run([pred_int, label_int, reduced_loss,train_op], feed_dict=feed_dict)
+            pred_i, label_i, red_loss, _ = sess.run([pred_int, label_int, reduced_loss, train_op], feed_dict=feed_dict)
         duration = time.time() - start_time
-        print('step {:d} \t loss = {:.3f}, predicted_label: {:d}, original_label: {:d}, ({:.3f} sec/step)'.format(step, pred_i, label_i, red_loss, duration))
+        print('step:', step, ' predicted_label:', pred_i, ' original_label:', label_i, ' reduced_loss:', red_loss, ' duration:', duration)
+        # break
     coord.request_stop()
     coord.join(threads)
     
