@@ -17,7 +17,7 @@ from vgg16 import VGG16Model, ImageReader, decode_labels, inv_preprocess, prepar
 IMG_MEAN = np.array((104.00698793,116.66876762,122.67891434), dtype=np.float32)
 
 BATCH_SIZE = 1
-DATA_DIRECTORY = '/home/ubuntu/Documents/codes/flower_classification/oxfordflower102/jpg_resized/'
+DATA_DIRECTORY = '../oxfordflower102/jpg_resized/'
 DATA_LIST_PATH = './dataset/val.txt'
 INPUT_SIZE = '225,225'
 LEARNING_RATE = 1.0e-3
