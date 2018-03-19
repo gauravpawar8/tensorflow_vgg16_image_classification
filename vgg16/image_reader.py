@@ -153,6 +153,5 @@ class ImageReader(object):
           
         Returns:
           Two tensors of size (batch_size, h, w, {3, 1}) for images and masks.'''
-        image_batch = tf.expand_dims( self.image, axis=0)
-        label_batch = self.label
+        image_batch, label_batch = tf.train.batch([self.image, self.label], num_elements)
         return image_batch, label_batch

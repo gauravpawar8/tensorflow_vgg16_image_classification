@@ -16,19 +16,19 @@ import numpy as np
 from vgg16 import VGG16Model, ImageReader, decode_labels, inv_preprocess, prepare_label
 IMG_MEAN = np.array((104.00698793,116.66876762,122.67891434), dtype=np.float32)
 
-BATCH_SIZE = 1
+BATCH_SIZE = 10
 DATA_DIRECTORY = '../oxfordflower102/jpg_resized/'
 DATA_LIST_PATH = './dataset/train.txt'
 INPUT_SIZE = '225,225'
-LEARNING_RATE = 1.0e-3
+LEARNING_RATE = 1.0e-4
 MOMENTUM = 0.9
 NUM_CLASSES = 102
-NUM_STEPS = 70001
+NUM_STEPS = 3001
 POWER = 0.9
 RANDOM_SEED = 1234
 RESTORE_FROM = "../vgg_16.ckpt"
 SAVE_NUM_IMAGES = 1
-SAVE_PRED_EVERY = 7000
+SAVE_PRED_EVERY = 300
 SNAPSHOT_DIR = './snapshots/'
 WEIGHT_DECAY = 0.0005
 
@@ -131,8 +131,8 @@ def main():
             IMG_MEAN,
             coord)
         image_batch, label_batch = reader.dequeue(args.batch_size)
+    print(image_batch, label_batch)
     label_int = tf.string_to_number( label_batch, out_type=tf.int32) - 1
-    label_int = tf.reshape(label_int, [1])
     # Create network.
     net = VGG16Model({'data': image_batch}, is_training=args.is_training, num_classes=args.num_classes)
      
@@ -141,7 +141,11 @@ def main():
     
     restore_var = [v for v in tf.global_variables() if 'fc8' not in v.name]
     all_trainable = [v for v in tf.trainable_variables() if 'beta' not in v.name and 'gamma' not in v.name]
+    fc_trainable = [v for v in all_trainable if 'fc' in v.name]
+    conv_trainable = [v for v in all_trainable if 'fc' not in v.name] 
+    assert(len(all_trainable) == len(fc_trainable) + len(conv_trainable))
     #print(all_trainable)
+    
     soft_output = tf.nn.softmax(raw_output)
     pred_int = tf.argmax(soft_output, dimension = 1)
                                                   
@@ -149,7 +153,17 @@ def main():
     reduced_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=label_int, logits=raw_output)
   
     # Define loss and optimisation parameters.
-    train_op = tf.train.AdamOptimizer(args.learning_rate).minimize(reduced_loss)    
+    opt_conv = tf.train.AdamOptimizer(args.learning_rate)
+    opt_fc = tf.train.AdamOptimizer(args.learning_rate * 10.0)
+    
+    grads = tf.gradients(reduced_loss, conv_trainable + fc_trainable)
+    grads_conv = grads[:len(conv_trainable)]
+    grads_fc = grads[len(conv_trainable) : (len(conv_trainable) + len(fc_trainable))]
+    
+    train_op_conv = opt_conv.apply_gradients(zip(grads_conv, conv_trainable))
+    train_op_fc = opt_fc.apply_gradients(zip(grads_fc, fc_trainable))
+    
+    train_op = tf.group(train_op_conv, train_op_fc)
     
     # Set up tf session and initialize variables. 
     config = tf.ConfigProto()
