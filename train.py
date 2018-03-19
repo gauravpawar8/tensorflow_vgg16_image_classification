@@ -26,7 +26,7 @@ NUM_CLASSES = 102
 NUM_STEPS = 70001
 POWER = 0.9
 RANDOM_SEED = 1234
-RESTORE_FROM = None
+RESTORE_FROM = "../vgg_16.ckpt"
 SAVE_NUM_IMAGES = 1
 SAVE_PRED_EVERY = 7000
 SNAPSHOT_DIR = './snapshots/'
@@ -135,12 +135,13 @@ def main():
     label_int = tf.reshape(label_int, [1])
     # Create network.
     net = VGG16Model({'data': image_batch}, is_training=args.is_training, num_classes=args.num_classes)
-    
+     
     # Predictions.
-    raw_output = net.layers['fc8']
+    raw_output = net.layers['vgg_16/fc8']
     
     restore_var = [v for v in tf.global_variables() if 'fc8' not in v.name]
-    
+    all_trainable = [v for v in tf.trainable_variables() if 'beta' not in v.name and 'gamma' not in v.name]
+    #print(all_trainable)
     soft_output = tf.nn.softmax(raw_output)
     pred_int = tf.argmax(soft_output, dimension = 1)
                                                   

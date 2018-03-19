@@ -137,7 +137,7 @@ def main():
     net = VGG16Model({'data': image_batch}, is_training=args.is_training, num_classes=args.num_classes)
     
     # Predictions.
-    raw_output = net.layers['fc8']
+    raw_output = net.layers['vgg_16/fc8']
     
     restore_var = [v for v in tf.global_variables()]
     
