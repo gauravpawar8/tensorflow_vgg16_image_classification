@@ -26,7 +26,7 @@ NUM_CLASSES = 102
 NUM_STEPS = 1189
 POWER = 0.9
 RANDOM_SEED = 1234
-RESTORE_FROM = '../snapshots/model.ckpt-0'
+RESTORE_FROM = './snapshots/model.ckpt-400'
 SAVE_NUM_IMAGES = 1
 SAVE_PRED_EVERY = 8000
 SNAPSHOT_DIR = './snapshots/'
@@ -164,11 +164,15 @@ def main():
     threads = tf.train.start_queue_runners(coord=coord, sess=sess)
 
     # Iterate over training steps.
+    score_val = 0
     for step in range(args.num_steps):
         start_time = time.time()
         pred_i, label_i = sess.run([pred_int, label_int])
         duration = time.time() - start_time
-        print('step:', step, ' predicted_label:', pred_i, ' original_label:', label_i, ' duration:', duration)
+        if pred_i==label_i:
+            score_val += 1
+        acc = (score_val * 100.0) / (step + 1)
+        print('step:', step, ' predicted_label:', pred_i, ' original_label:', label_i, ' duration:', duration, ' classification accuracy:', acc)
     coord.request_stop()
     coord.join(threads)
     

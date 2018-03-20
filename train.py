@@ -20,7 +20,7 @@ BATCH_SIZE = 10
 DATA_DIRECTORY = '../oxfordflower102/jpg_resized/'
 DATA_LIST_PATH = './dataset/train.txt'
 INPUT_SIZE = '225,225'
-LEARNING_RATE = 1.0e-4
+LEARNING_RATE = 1.0e-5
 MOMENTUM = 0.9
 NUM_CLASSES = 102
 NUM_STEPS = 3001
@@ -28,7 +28,7 @@ POWER = 0.9
 RANDOM_SEED = 1234
 RESTORE_FROM = "../vgg_16.ckpt"
 SAVE_NUM_IMAGES = 1
-SAVE_PRED_EVERY = 300
+SAVE_PRED_EVERY = 200
 SNAPSHOT_DIR = './snapshots/'
 WEIGHT_DECAY = 0.0005
 
@@ -131,8 +131,7 @@ def main():
             IMG_MEAN,
             coord)
         image_batch, label_batch = reader.dequeue(args.batch_size)
-    print(image_batch, label_batch)
-    label_int = tf.string_to_number( label_batch, out_type=tf.int32) 
+    label_int = tf.string_to_number( label_batch, out_type=tf.int32) - 1
     # Create network.
     net = VGG16Model({'data': image_batch}, is_training=args.is_training, num_classes=args.num_classes)
      
@@ -143,7 +142,10 @@ def main():
     all_trainable = [v for v in tf.trainable_variables() if 'beta' not in v.name and 'gamma' not in v.name]
     fc_trainable = [v for v in all_trainable if 'fc' in v.name]
     conv_trainable = [v for v in all_trainable if 'fc' not in v.name] 
+    fc_w_trainable = [v for v in fc_trainable if 'weights' in v.name] # lr * 10.0
+    fc_b_trainable = [v for v in fc_trainable if 'biases' in v.name] # lr * 20.0
     assert(len(all_trainable) == len(fc_trainable) + len(conv_trainable))
+    assert(len(fc_trainable) == len(fc_w_trainable) + len(fc_b_trainable))
     #print(all_trainable)
     
     soft_output = tf.nn.softmax(raw_output)
@@ -152,18 +154,25 @@ def main():
     # Pixel-wise softmax loss.
     reduced_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=label_int, logits=raw_output)
   
-    # Define loss and optimisation parameters.
-    opt_conv = tf.train.AdamOptimizer(args.learning_rate)
-    opt_fc = tf.train.AdamOptimizer(args.learning_rate * 10.0)
+    # Define optimisation parameters.
+    base_lr = tf.constant(args.learning_rate)
+    step_ph = tf.placeholder(dtype=tf.float32, shape=())
+    learning_rate = tf.scalar_mul(base_lr, tf.pow((1 - step_ph / args.num_steps), args.power))
     
-    grads = tf.gradients(reduced_loss, conv_trainable + fc_trainable)
+    opt_conv = tf.train.MomentumOptimizer(learning_rate, args.momentum)
+    opt_fc_w = tf.train.MomentumOptimizer(learning_rate * 10.0, args.momentum)
+    opt_fc_b = tf.train.MomentumOptimizer(learning_rate * 20.0, args.momentum)
+    
+    grads = tf.gradients(reduced_loss, conv_trainable + fc_w_trainable + fc_b_trainable)
     grads_conv = grads[:len(conv_trainable)]
-    grads_fc = grads[len(conv_trainable) : (len(conv_trainable) + len(fc_trainable))]
-    
+    grads_fc_w = grads[len(conv_trainable) : (len(conv_trainable) + len(fc_w_trainable))]
+    grads_fc_b = grads[(len(conv_trainable) + len(fc_w_trainable)):]
+
     train_op_conv = opt_conv.apply_gradients(zip(grads_conv, conv_trainable))
-    train_op_fc = opt_fc.apply_gradients(zip(grads_fc, fc_trainable))
-    
-    train_op = tf.group(train_op_conv, train_op_fc)
+    train_op_fc_w = opt_fc_w.apply_gradients(zip(grads_fc_w, fc_w_trainable))
+    train_op_fc_b = opt_fc_b.apply_gradients(zip(grads_fc_b, fc_b_trainable))
+
+    train_op = tf.group(train_op_conv, train_op_fc_w, train_op_fc_b)
     
     # Set up tf session and initialize variables. 
     config = tf.ConfigProto()
@@ -187,12 +196,13 @@ def main():
     # Iterate over training steps.
     for step in range(args.num_steps):
         start_time = time.time()
+        feed_dict = { step_ph : step }
         if step % args.save_pred_every == 0:
-            pred_i, label_i, red_loss, _ = sess.run([pred_int, label_int, reduced_loss,train_op])
+            pred_i, label_i, red_loss, _ = sess.run([pred_int, label_int, reduced_loss,train_op], feed_dict=feed_dict)
             if step > 0:
                 save(saver, sess, args.snapshot_dir, step)
         else:
-            pred_i, label_i, red_loss, _ = sess.run([pred_int, label_int, reduced_loss, train_op])
+            pred_i, label_i, red_loss, _ = sess.run([pred_int, label_int, reduced_loss, train_op], feed_dict=feed_dict)
         duration = time.time() - start_time
         print('step:', step, ' predicted_label:', pred_i, ' original_label:', label_i, ' reduced_loss:', red_loss, ' duration:', duration)
     coord.request_stop()
