@@ -132,7 +132,7 @@ def main():
             coord)
         image_batch, label_batch = reader.dequeue(args.batch_size)
     print(image_batch, label_batch)
-    label_int = tf.string_to_number( label_batch, out_type=tf.int32) - 1
+    label_int = tf.string_to_number( label_batch, out_type=tf.int32) 
     # Create network.
     net = VGG16Model({'data': image_batch}, is_training=args.is_training, num_classes=args.num_classes)
      
