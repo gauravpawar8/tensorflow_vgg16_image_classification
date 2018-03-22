@@ -1,4 +1,4 @@
-# tensorflow_vgg16_image_classification
+# tensorflow vgg16  based oxfordflower102 image classification
 VGG16 based classifier has been trained for oxfordflower102 dataset. A pre-trained vgg16 model for imagenet dataset has been utilized to initializ the weights.
 vgg16:  http://download.tensorflow.org/models/vgg_16_2016_08_28.tar.gz
 
